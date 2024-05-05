@@ -34,21 +34,26 @@ def get_rankings(div_num):
   return make_request(f"https://www.robotevents.com/api/v2/events/{event_code}/divisions/{div_num}/rankings?&per_page=250")
 
 
+NUM_TEAMS=113
 def top_30_percent(iter):
   l = list(iter)
-  end = min(len(l), int(114*.3))
+  end = min(len(l), int(NUM_TEAMS*.3))
   return l[:end]
-  
+
+
+def extract_ranking(el):
+  played = el['wins'] + el['losses'] + el['ties']
+  return (el['wp']/played, el['ap']/played, el['sp']/played)
+
+
 """## Data Collection
 
 """
 def get_excellence():
     progs_raw = get_prog_skills()
     drivers_raw = get_driver_skills()
-
     ranks1 = get_rankings(1)
     ranks2 = get_rankings(2)
-
 
     drivers_score = {}
     for elem in drivers_raw:
@@ -60,20 +65,21 @@ def get_excellence():
 
     drivers = list(map(lambda elem : (elem['team']['name'], elem['score']), drivers_raw))
     progs = list(map(lambda elem : (elem['team']['name'], elem['score']), progs_raw))
-
     """## Top 30% of rankings"""
 
-    ranks1_in_order = sorted([(elem['team']['name'], elem['rank']) for elem in ranks1], key = lambda elem : elem[1])
-    ranks2_in_order = sorted([(elem['team']['name'], elem['rank']) for elem in ranks2], key = lambda elem : elem[1])
+    all_ranks = ranks1 + ranks2
+    ranked_order = sorted([(el['team']['name'], extract_ranking(el)) for el in all_ranks], key = lambda el : el[1], reverse=True)
 
-    passing_ranks = list(map(lambda x : x[0], top_30_percent(ranks1_in_order) + top_30_percent(ranks2_in_order)))
+    passing_ranks = [el[0] for el in ranked_order[:int(len(ranked_order) * .3)]]
 
     """## Top 30% of prog skills"""
 
-    progs_in_order = map(lambda x : x[0], sorted(progs, key = lambda x : x[1], reverse=True))
-
+    progs_in_order = list(map(lambda x : x[0], sorted(progs, key = lambda x : x[1], reverse=True)))
     passing_progs = top_30_percent(progs_in_order)
-
+    passing_progs_set = set(passing_progs)
+    for el in  progs:
+      if el[1] == 0 and el[0] in passing_progs_set:
+        passing_progs_set.remove(el[0])
     """
     ## Top 30% combined skills"""
 
@@ -83,15 +89,16 @@ def get_excellence():
         scores[elem[0]] += elem[1]
       else:
         scores[elem[0]] = elem[1]
+
     for elem in progs:
       if elem[0] in scores:
         scores[elem[0]] += elem[1]
       else:
         scores[elem[0]] = elem[1]
+
     combined =sorted(list(scores.items()), key = lambda x : x[1], reverse = True)
-
     passing_combined = top_30_percent(map(lambda x : x[0], combined))
-
+    
     """## Elligible from qualling events"""
 
     elligible_from_qualling = "AA1 ATUM AUBIE1 AUI BA2 BLRS BLRS2 CDM1 CPSLO EBRT EMU5 FSU GATR1 HAIL IEST1 IQ1 ITESM1 JACKS KU1 MINES MTSAC2 NJIT PERRY PSAU1 PUC4 PYRO QUEEN RIT SENAV1 SJTU1 SJTU2 TCMG2 TJU2 TMAT1 TNTN UACH1 UCF UCR1 UCSA USST1 UTCHE2 UTCJ2 VCAT VTCRO WHOOP WISCO WLDCT WPI".split(' ')
@@ -113,17 +120,35 @@ def get_excellence():
     
     # print("Teams who are elligible:")
     # print(elligible)
-    return elligible, drivers_score, prog_score, passing_progs, passing_combined, passing_ranks
+    return elligible, drivers_score, prog_score, passing_progs, passing_combined, passing_ranks, ranked_order
 
 if __name__=='__main__':
-    teams, drivers_score, prog_score, passing_progs, passing_combined, passing_ranks = get_excellence()
+    teams, drivers_score, prog_score, passing_progs, passing_combined, passing_ranks, ranked_order = get_excellence()
 
     print(passing_combined)
     
-    msg = ""
+    # say() sends a message to the channel where the event was triggered
+    teams, drivers_score, prog_score, passing_progs, passing_combined, passing_ranks, ranked_order = get_excellence()
+    # table: PrettyTable = PrettyTable()
+    # table.field_names = ["Team", "Driver Score", "Skills Score", "Combined*"]
+    msg = "Teams Eligible for excellence: \n"#```\n"+repr(table)+"```\n"
+    msg += "Team, Driver Score, Prog Score, Combined*, Rank\n"
+    msg += '```\n'
+    for team in teams:
+        d, p = drivers_score[team], prog_score[team]  
+        c = d + p
+        rank = list(map(lambda x : x[0], ranked_order)).index(team)+1
+        msg += f"{team:6}  {d:3}  {p:3} {c:3}  {rank:2}\n"
+
+
+    msg += '```\n'
+
     prog_rank = passing_progs.index('RIT')+1
+    overall_rank = passing_ranks.index('RIT')+1
     combined_rank = passing_combined.index('RIT')+1
-    msg = ""
-    msg += f"Programming Skills Rank: {prog_rank}\n"
-    msg += f"Combined Skills Rank: {combined_rank}\n"
+    msg += f'Programming Skills Rank: {prog_rank}\n'
+    msg += f'Combined Skills Rank: {combined_rank}\n'
+    msg += f'Overall Rank: {overall_rank}\n'
+
+
     print(msg)
